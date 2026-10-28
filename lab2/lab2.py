@@ -16,6 +16,7 @@ HOME = [0, 0, 0, 0, 0, 0]
 CSV_FILE = "data.csv"
 
 # ---- Connect to the robot (step 5) ----
+# This is correct arm, not mycobot
 mc = MechArm270(PI_PORT, PI_BAUD)
 time.sleep(1)
 
