@@ -14,11 +14,30 @@ SPEED = 30             # robot speed, 1-100
 MOVE_TIME = 4          # seconds to wait for each move to finish
 HOME = [0, 0, 0, 0, 0, 0]
 CSV_FILE = "data.csv"
+GRIPPER_TYPE = 1       # 1 = adaptive gripper (try 3 = parallel gripper if it doesn't respond)
+
+# ---- Limits the robot accepts for send_angles / send_coords ----
+# Read them from pymycobot itself so they match what playback will accept.
+try:
+    from pymycobot.robot_info import RobotLimit
+    LIMITS = RobotLimit.robot_limit["MechArm270"]
+except Exception:
+    LIMITS = {                                  # same values, copied from pymycobot 4.0.7
+        "angles_min": [-160, -75, -175, -155, -115, -180],
+        "angles_max": [160, 120, 65, 155, 115, 180],
+        "coords_min": [-272, -272, -86, -180, -180, -180],
+        "coords_max": [272, 272, 408.9, 180, 180, 180],
+    }
 
 # ---- Connect to the robot (step 5) ----
-# This is correct arm, not mycobot
 mc = MechArm270(PI_PORT, PI_BAUD)
 time.sleep(1)
+
+
+def close_gripper():
+    """Close the claw on the marker. Arguments: 1 = close, speed 50, gripper type."""
+    mc.set_gripper_state(1, 50, GRIPPER_TYPE)
+    time.sleep(2)                               # give the claw time to close
 
 
 def get_position():
@@ -35,16 +54,40 @@ def get_position():
     return angles, coords
 
 
+def check_point(angles, coords):
+    """Return a list of problems with this point. An empty list means the robot can play it back."""
+    problems = []
+    for i in range(6):
+        low, high = LIMITS["angles_min"][i], LIMITS["angles_max"][i]
+        if not low <= angles[i] <= high:
+            problems.append(f"J{i + 1} is {angles[i]} deg (allowed {low} to {high})")
+    names = ["x", "y", "z", "rx", "ry", "rz"]
+    for i in range(6):
+        low, high = LIMITS["coords_min"][i], LIMITS["coords_max"][i]
+        if not low <= coords[i] <= high:
+            problems.append(f"{names[i]} is {coords[i]} (allowed {low} to {high})")
+    return problems
+
+
 def record_points():
     """Steps 6-10: unlock the arm, move it by hand, and save each point to a CSV file."""
     mc.release_all_servos()
+    close_gripper()                             # re-close in case releasing the servos loosened the claw
     print("Servos released - you can move the arm by hand.")
 
     points = []
-    for i in range(NUM_POINTS):
-        input(f"Hold the pen on point {i + 1}, then press Enter...")
+    while len(points) < NUM_POINTS:
+        input(f"Hold the pen on point {len(points) + 1}, then press Enter...")
         angles, coords = get_position()
+        problems = check_point(angles, coords)
+        if problems:                            # outside the limits -> don't save, ask again
+            print("  NOT SAVED - the robot can't play this point back:")
+            for p in problems:
+                print("   -", p)
+            print("  Move the arm to a less extreme position and try again.\n")
+            continue
         points.append(angles + coords)          # one row: 6 angles followed by 6 coords
+        print(f"  Point {len(points)} saved.\n")
 
     with open(CSV_FILE, "w", newline="") as f:
         writer = csv.writer(f)
@@ -68,7 +111,11 @@ def play_angles(points):
         print(f"Angle playback - loop {loop + 1} of {LOOPS}")
         for i, p in enumerate(points):
             print(f"  Point {i + 1}")
-            mc.send_angles(p[:6], SPEED)         # first 6 values = joint angles
+            try:
+                mc.send_angles(p[:6], SPEED)     # first 6 values = joint angles
+            except Exception as error:           # the library rejects values outside the joint limits
+                print(f"  Skipped point {i + 1}: {error}")
+                continue
             time.sleep(MOVE_TIME)
             mc.send_angles(HOME, SPEED)          # lift away so the pen doesn't drag to the next point
             time.sleep(MOVE_TIME)
@@ -80,13 +127,20 @@ def play_coords(points):
         print(f"Coordinate playback - loop {loop + 1} of {LOOPS}")
         for i, p in enumerate(points):
             print(f"  Point {i + 1}")
-            mc.send_coords(p[6:], SPEED, 0)      # last 6 values = x, y, z, rx, ry, rz
+            try:
+                mc.send_coords(p[6:], SPEED, 0)  # last 6 values = x, y, z, rx, ry, rz
+            except Exception as error:           # the library rejects coordinates outside its limits
+                print(f"  Skipped point {i + 1}: {error}")
+                continue
             time.sleep(MOVE_TIME)
             mc.send_angles(HOME, SPEED)
             time.sleep(MOVE_TIME)
 
 
 # ---- Main program ----
+input("Place the marker between the claw's jaws, then press Enter to close the claw...")
+close_gripper()
+
 if input("Record new points? (y/n): ").strip().lower() == "y":
     points = record_points()
 else:
@@ -94,6 +148,7 @@ else:
 
 mc.power_on()                                   # lock the servos again so the robot can move itself
 time.sleep(1)
+close_gripper()                                 # make sure the claw is still closed before playback
 
 input("Press Enter to start playback using ANGLES...")
 play_angles(points)
