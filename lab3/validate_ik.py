@@ -4,15 +4,13 @@ Requires NumPy, SciPy and SymPy. From the workspace root:
     python lab3/validate_ik.py
     python lab3/validate_ik.py --csv path/to/data.csv --output results.csv
 
-By default, reads the ten recorded poses directly from the Lab 2 archive
-and writes part1_validation.csv beside this script.
+By default, reads the ten recorded poses from lab2/data.csv and writes
+part1_validation.csv beside this script.
 """
 
 import argparse
 import csv
-import io
 from pathlib import Path
-from zipfile import ZipFile
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -29,8 +27,7 @@ from mecharm_INVK_group_09 import (
 
 
 LAB_DIR = Path(__file__).resolve().parent
-LAB2_ARCHIVE = LAB_DIR.parent / "lab2" / "EE347_UW_Lab2_Group9.zip"
-POSE_CSV = "Challenge_2_Drag_Teaching/data.csv"
+LAB2_CSV = LAB_DIR.parent / "lab2" / "data.csv"
 POSE_COLUMNS = ["x", "y", "z", "rx", "ry", "rz"]
 FIXED_SEED_RAD = np.full(6, 0.1)
 
@@ -118,16 +115,12 @@ def compare_solvers(samples):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--csv", type=Path, help="Use a CSV instead of the Lab 2 archive")
+    parser.add_argument("--csv", type=Path, default=LAB2_CSV,
+                        help="Recorded poses (default: lab2/data.csv)")
     parser.add_argument("--output", type=Path, default=LAB_DIR / "part1_validation.csv")
     args = parser.parse_args()
-    if args.csv:
-        with args.csv.open(newline="", encoding="utf-8-sig") as file:
-            samples = read_samples(file)
-    else:
-        with ZipFile(LAB2_ARCHIVE) as archive, archive.open(POSE_CSV) as raw_file:
-            with io.TextIOWrapper(raw_file, encoding="utf-8-sig", newline="") as file:
-                samples = read_samples(file)
+    with args.csv.open(newline="", encoding="utf-8-sig") as file:
+        samples = read_samples(file)
 
     rows = compare_solvers(samples)
     with args.output.open("w", newline="", encoding="utf-8") as file:

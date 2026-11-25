@@ -15,11 +15,15 @@ q1, q2, q3, q4, q5, q6 = JOINT_SYMBOLS
 
 TOOL_LENGTH_MM = Rational("65.5")
 
-# Standard Lab 2 DH rows (a, alpha, d, theta), with the J2 offset included.
+# Standard DH rows (a, alpha, d, theta), with the J2 offset included.
+# Same as Lab 2 except a3 = 10 mm: an elbow offset between J3 and the forearm.
+# Lab 2 omitted it; fitting all link lengths to the ten recorded Lab 2 poses
+# gave a3 = 9.97 mm and cut the FK position error from 5.5 mm to 0.5 mm RMS.
+ELBOW_OFFSET_MM = 10
 DH_PARAMETERS = (
     (0, -pi / 2, Rational("136.5"), q1),
     (100, 0, 0, q2 - pi / 2),
-    (0, -pi / 2, 0, q3),
+    (ELBOW_OFFSET_MM, -pi / 2, 0, q3),
     (0, pi / 2, Rational("107.5"), q4),
     (0, -pi / 2, 0, q5),
     (0, 0, TOOL_LENGTH_MM, q6),
@@ -113,3 +117,20 @@ def inverse_kinematics(target_pose, q_init, max_iterations=100, tolerance=1e-6):
     )
     q_rad = wrap_angles(np.concatenate((position.x, orientation.x)))
     return q_rad, position, orientation
+
+
+if __name__ == "__main__":
+    # Step 12: solve one recorded Lab 2 target (sample 1 of lab2/data.csv).
+    # Target pose: XYZ in mm, roll/pitch/yaw converted from degrees to radians.
+    x_target, y_target, z_target = 182.1, 83.7, 183.3
+    rx_d, ry_d, rz_d = np.deg2rad([83.36, -2.34, 112.55])
+    q_init = [0.1] * 6  # Nonzero seed, as in the handout
+
+    q_rad, _, _ = inverse_kinematics(
+        [x_target, y_target, z_target, rx_d, ry_d, rz_d], q_init
+    )
+    joint_angles_deg = np.degrees(q_rad)
+
+    print("Joint Angles (Degrees):")
+    for i, angle in enumerate(joint_angles_deg, start=1):
+        print(f"q{i} = {angle:.2f}")
